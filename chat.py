@@ -1,8 +1,9 @@
 # chat.py
 """
 RAG Chat CLI:
-- Pulls context from VectorStore + recent session + local events/git/browser history
+- Pulls context from VectorStore + session memory + local events/git/browser history
 - Generates answers via LLMClient
+- Enhanced to include all git repositories and all their commits in context
 """
 import os
 import time
@@ -54,38 +55,50 @@ def semantic_retrieve(query: str, top_k=RAG_TOP_K):
         hits.append({"score": float(score), "path": path, "snippet": snippet})
     return hits
 
+# -------------------------
+# Context gathering
+# -------------------------
 def gather_context(query):
     context_docs = []
 
-    # Session memory
+    # 1️⃣ Session memory
     session_ctx = get_session_context()
     if session_ctx:
         context_docs.append({"path": "session_memory", "content": session_ctx})
 
-    # Semantic RAG hits
+    # 2️⃣ Semantic RAG hits
     hits = semantic_retrieve(query)
     for h in hits:
         context_docs.append({"path": h["path"], "content": h["snippet"]})
 
-    # Recent local file events
-    for event in watcher.get_recent_file_events(limit=5):
+    # 3️⃣ Recent local file events
+    for event in watcher.get_recent_file_events(limit=10):
         context_docs.append({"path": "file_event", "content": event})
 
-    # Recent git commits
-    for commit in git_watcher.get_recent_commits(limit=5):
-        context_docs.append({"path": "git_commit", "content": commit})
+    # 4️⃣ All git commits from all repos
+    # This ensures we include multiple repos instead of only one
+    for repo_path, commits in git_watcher.get_all_repositories_with_commits().items():
+        for commit in commits:
+            # commit is a string like "[date] repo_name: message"
+            context_docs.append({"path": f"git_commit:{repo_path}", "content": commit})
 
-    # Recent browser history
-    for entry in browser_history.get_recent_browser_history(limit=5):
+    # 5️⃣ Recent browser history
+    for entry in browser_history.get_recent_browser_history(limit=10):
         context_docs.append({"path": "browser", "content": entry})
 
     return context_docs
 
+# -------------------------
+# Generate reply
+# -------------------------
 def generate_reply(user_query: str):
     context_docs = gather_context(user_query)
     context_text = "\n\n".join([f"Source: {d['path']}\n{d['content']}" for d in context_docs])
-    prompt = f"Use the following context to answer concisely:\n{context_text}\n\nUser query:\n{user_query}"
-    return llm.generate(prompt)
+    
+    system_prompt = "You are a helpful AI assistant with access to the user's local memory and git/browser history."
+    user_prompt = f"Use the following context to answer concisely:\n{context_text}\n\nUser query:\n{user_query}"
+    
+    return llm.generate(system_prompt=system_prompt, user_prompt=user_prompt)
 
 # -------------------------
 # CLI
