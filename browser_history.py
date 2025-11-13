@@ -9,7 +9,7 @@ EVENT_DB = os.environ.get("EVENT_DB", "events.db")
 CHROME_HISTORY_PATH = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\History")
 MAX_ENTRIES = 200
 
-def fetch_recent_history(days=3):
+def fetch_recent_history(days=10):
     if not os.path.exists(CHROME_HISTORY_PATH):
         return []
 
